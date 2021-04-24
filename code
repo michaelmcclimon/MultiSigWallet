@@ -1,0 +1,122 @@
+pragma solidity 0.7.5;
+pragma abicoder v2;
+
+
+
+contract multiSigWallet {
+  
+  uint private TotalBalance;
+  
+  //Owners
+  address private Owner1 = address(0);
+  address private Owner2 = address(0);
+  address private Owner3 = address(0);
+  
+  //Transaction struct
+  struct Transactions {
+      address payable recipient;
+      uint amount;
+      address initiatior;
+      bool signature1;
+      address  countersigner;
+      bool signature2;
+      bool status; 
+  }
+  
+  //array for logging the Transactions
+  Transactions[] private TransactionLog;
+  
+  constructor() {
+      Owner1 = msg.sender;
+  }
+  
+  //modifier
+  modifier OnlyAnOwner() {
+      require(msg.sender == Owner1 || msg.sender == Owner2 || msg.sender == Owner3, "You dont own any of these wallets!!");
+      _;
+  }
+  
+  //one time function
+  function SetNewOwners(address _Owner2, address _Owner3) public {
+      require(msg.sender == Owner1, "You cannot access other wallets to define new owners");
+      require(Owner2 == address(0) && Owner3 == address(0), "Wallets have already been defined.");
+      Owner2 = _Owner2;
+      Owner3 = _Owner3;
+  }
+  
+  //events
+  event depostiDone(address indexed depositedBy, uint ammount);
+  event TransactionStarted(address indexed initiatior, address indexed recipient, uint ammount);
+  event signatureDone(uint indexed transaction, address indexed Signatore, bool approval);
+  event transactionDone(uint index, address indexed recipient, uint amount);
+  
+  
+  //functions
+  function getTransaction(uint index) public view OnlyAnOwner returns(Transactions memory) {
+      return (TransactionLog[index]);
+  }
+  
+  function SignTransaction(uint index, bool approval, bool send) public OnlyAnOwner {
+      
+      require(TransactionLog[index].status != true, "This transaction has already been executed.");
+      require(msg.sender != TransactionLog[index].initiatior,"You have initiated the transaction now you need another signature.");
+      
+      TransactionLog[index].countersigner = msg.sender;
+      TransactionLog[index].signature2 = approval;
+      
+      emit signatureDone(index, msg.sender, approval);
+      
+      if (send) {
+          ExecuteTransaction(index);
+      }
+  }
+  
+  function InternalizeTransaction(address payable _recipient, uint _amount) public OnlyAnOwner {
+      Transactions memory newTransaction;
+      newTransaction.recipient = _recipient; //not sure why i have an error here?
+      newTransaction.amount = _amount;
+      newTransaction.initiatior = msg.sender;
+      newTransaction.signature1 = true;
+      newTransaction.countersigner = address(0);
+      newTransaction.signature2 = false;
+      newTransaction.status = false;
+      
+      insertTrasaction(newTransaction);
+      emit TransactionStarted(msg.sender, _recipient, _amount);
+  }
+  
+  function insertTrasaction (Transactions memory newTransaction) private {
+      TransactionLog.push(newTransaction);
+  }
+  
+  function ExecuteTransaction(uint index) public payable OnlyAnOwner{
+      //checks
+      require(TransactionLog[index].status != true, "This Transaction already exists!!");
+      require(TransactionLog[index].signature1 == true && TransactionLog[index].signature2 == true, "Not enough signatures!!!");
+      require(TotalBalance >= TransactionLog[index].amount, "Not enough funds!!!");
+      
+      //transfer and balance update
+      TransactionLog[index].recipient.transfer(TransactionLog[index].amount);
+      TotalBalance -= TransactionLog[index].amount;
+      
+      TransactionLog[index].status = true;
+      
+      emit transactionDone(index,TransactionLog[index].recipient, TransactionLog[index].amount);
+  }
+  
+  function deposit() public payable returns(uint) {
+      TotalBalance += msg.value;
+      emit depostiDone(msg.sender, msg.value);
+      return TotalBalance;
+  }
+  
+  function getOwners() public view OnlyAnOwner returns(address, address, address){
+      return (Owner1, Owner2, Owner3);
+  }
+  
+  function getWalletBalance() public view returns(uint){
+      return TotalBalance;
+  }
+  
+  
+}
